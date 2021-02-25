@@ -26,12 +26,16 @@
 %        with the points coordinates and a set
 %        of data matrices, one for each model.
 %
-% Note: The script only considers yaw rotation,
-%       which is around Z axis (see sdf format
-%       documentation).
+% Notes: 
+%     1. The script only considers yaw rotation,
+%        which is around Z axis (see sdf format
+%        documentation).
+%     2. The script only plots boxes and cylinders,
+%        by looking for model tags with 'box' or
+%        'cylinder' words on them.
 %----------------------------------------------%
 
-%%
+%% Globals
 
 % Model type identifiers
 actual_box = 0;
@@ -41,6 +45,7 @@ actual_cilinder = 0;
 poseFound = 0;
 scaleFound = 0;
 
+% Variables for model's dimension and pose
 model_name = "";
 xPosition = 0;
 yPosition = 0;
@@ -50,13 +55,25 @@ xScale = 0;
 yScale = 0;
 
 % Models matrices to keep their dimensions
-figuresMatrix = zeros(1,8);
+figuresMatrix   = zeros(1,8);
 cylindersMatrix = zeros(1,3);
 
-% Remove last xlsx
+%% Folder cleaner
+
+% Remove last xlsx for rectangles
 if exist('figures_container.xlsx', 'file') == 2
     delete('figures_container.xlsx')
 end
+% Remove last xlsx for cylinders
+if exist('cylinders_container.xlsx', 'file') == 2
+    delete('cylinders_container.xlsx')
+end
+% Remove last image of the ground truth
+if exist('Ground_Truth_Image.jpg', 'file') == 2
+    delete('Ground_Truth_Image.jpg')
+end
+
+%% Models' dimensions catcher
 
 base_file_id = fopen('ground_truth.world', 'r');
 actual_line = string(fgetl(base_file_id));
@@ -68,7 +85,7 @@ while (size(actual_line_token) ~= 1)
     actual_line_token = regexp(actual_line, 'state world_name', 'match');
 end
 
-% Look for the models
+% Repeat until the world is fully scanned
 while(actual_line ~= '-1')
     
     % Look for the model name
@@ -84,7 +101,6 @@ while(actual_line ~= '-1')
     if (size(actual_line_token) == 1 & poseFound == 0)
         [xPosition, yPosition, yawRotation] = get_model_pose(actual_line);
         poseFound = 1;
-        fprintf("Yaw returned is: [" + yawRotation + "]\n")
     end
     
     % Look for the model scale
@@ -118,47 +134,66 @@ while(actual_line ~= '-1')
     actual_line = string(fgetl(base_file_id));    
 end
 
-% Construct the graph
+%% Routine to plot the figures together
+
+% Construct the rectangles part of the graph
 writematrix(figuresMatrix, 'figures_container.xlsx')
-data = xlsread('figures_container.xlsx');
-data = reshape(data, [], 2, 4);
-data = permute(data, [2 3 1]);
-n = size(data, 3);
-p = arrayfun(@(k) polyshape(data(1,:,k),data(2,:,k)), 1:n);
-q = p(1);
-for k=2:n
-    q = union(q,p(k));
+boxData = figuresMatrix;
+boxData = reshape(boxData, [], 2, 4);
+boxData = permute(boxData, [2 3 1]);
+n       = size(boxData, 3);
+p       = arrayfun(@(k) polyshape(boxData(1,:,k), boxData(2,:,k)), 1:n);
+q       = p(1);
+for k = 2:n
+    q = union(q, p(k));
 end
-plot(q)
+
+% Construct the circles part of the graph
+writematrix(cylindersMatrix, 'cylinders_container.xlsx')
+cylindersAmount = size(cylindersMatrix, 1);
+actualCylinder = 1;
+theta = (0:99)*(2*pi/100);
+while actualCylinder <= cylindersAmount
+    x = cylindersMatrix(actualCylinder, 1) + (cylindersMatrix(actualCylinder, 3)/2)*cos(theta);
+    y = cylindersMatrix(actualCylinder, 2) + (cylindersMatrix(actualCylinder, 3)/2)*sin(theta);
+    P = polyshape(x,y);
+    q = union(q, P);
+    actualCylinder = actualCylinder + 1;
+end
+
+plot(q);
 axis equal
-fprintf("Completed \n")
+exportgraphics(gca,'Ground_Truth_Image.png','Resolution', 2400)
+fprintf("Completed! \n")
 
-%% 
+%% Functions to get the models relevant data
+
 % Function to get the name of the different models involved
-
 function mod_name = get_model_name(actual_line)
     mod_name = regexp(actual_line, '''\w+''', 'match'); % Gets the model name with quotes
     mod_name = extractBetween(mod_name, "'", "'"); % Removes the quotes
 end
 
+% Function to get the model pose (x, y, yaw rotation)
 function [xPos, yPos, yawRot] = get_model_pose(actual_line)
     actual_line = extractBetween(actual_line, "<pose frame=''>", "</pose>");
-      out       = regexp(actual_line, ' ', 'split');
-      xPos      = str2double(out(1));
-      yPos      = str2double(out(2));
-      yawRot    = str2double(out(6));
-      fprintf("Real yaw is: [" + yawRot + "]\n")
+    out         = regexp(actual_line, ' ', 'split');
+    xPos        = str2double(out(1));
+    yPos        = str2double(out(2));
+    yawRot      = str2double(out(6));
 end
 
+% Function to get the model scale
 function [xScale, yScale] = get_model_scale(actual_line)
     actual_line = extractBetween(actual_line, "<scale>", "</scale>");
     out         = regexp(actual_line, ' ', 'split');
-      xScale    = str2double(out(1));
-      yScale    = str2double(out(2));
+    xScale      = str2double(out(1));
+    yScale      = str2double(out(2));
 end
 
-%%
-% Function to calculate figures dimensions to plot
+%% Functions to calculate the models relevant dimensions
+
+% Function to calculate box corners to plot
 function [b2, b3, b4, b5, b6, b7, b8, b9] = box_corners(Center_X, Center_Y, Scale_X, Scale_Y, Rotation_rad, boxName)
     b1 = boxName;
     b2 = Center_X - Scale_X/2*cos(Rotation_rad) - Scale_Y/2*sin(Rotation_rad);
@@ -172,6 +207,7 @@ function [b2, b3, b4, b5, b6, b7, b8, b9] = box_corners(Center_X, Center_Y, Scal
 
 end
 
+% Function to return the cylinder relevant dimensions (formality)
 function [c2, c3, c4] = cylinder_dimensions(Center_X, Center_Y, Radius, cylinderName)
     c1 = cylinderName;
     c2 = Center_X;
