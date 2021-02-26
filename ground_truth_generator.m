@@ -161,7 +161,8 @@ while actualCylinder <= cylindersAmount
     actualCylinder = actualCylinder + 1;
 end
 
-plot(q);
+plot(q,'FaceColor','none')
+set(gca,'XTick',[], 'YTick', [], 'Visible','off')
 axis equal
 exportgraphics(gca,'Ground_Truth_Image.png','Resolution', 2400)
 fprintf("Completed! \n")
